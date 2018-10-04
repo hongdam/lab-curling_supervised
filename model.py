@@ -36,19 +36,19 @@ class ResidualBlock(nn.Module):
 class ResNet(nn.Module):
     def __init__(self, block, layers, num_classes=10):
         super(ResNet, self).__init__()
-        self.in_channels = 64
-        self.conv = conv3x3(13, 64) # my stone, enemy's stone, 1, order0, order1, turn 0~7
-        self.bn = nn.BatchNorm2d(64)
+        self.in_channels = 128
+        self.conv = conv3x3(13, 128) # my stone, enemy's stone, 1, order0, order1, turn 0~7
+        self.bn = nn.BatchNorm2d(128)
         self.relu = nn.ReLU(inplace=True)
-        self.layer1 = self.make_layer(block, 64, layers[0])
-        self.layer2 = self.make_layer(block, 64, layers[1])
-        self.layer3 = self.make_layer(block, 64, layers[2])
-        self.layer4 = self.make_layer(block, 64, layers[3])
-        self.value_conv = nn.Conv2d(64, 1, 3, 1, 1)
+        self.layer1 = self.make_layer(block, 128, layers[0])
+        self.layer2 = self.make_layer(block, 128, layers[1])
+        self.layer3 = self.make_layer(block, 128, layers[2])
+        self.layer4 = self.make_layer(block, 128, layers[3])
+        self.value_conv = nn.Conv2d(128, 1, 3, 1, 1)
         self.value_fc = nn.Linear(32 * 32, 17)
         # self.value_softmax = nn.Softmax(dim=1)
 
-        self.policy_conv1 = nn.Conv2d(64, 2, 3, 1, 1)
+        self.policy_conv1 = nn.Conv2d(128, 2, 3, 1, 1)
         self.policy_conv2 = nn.Conv2d(2, 2, 3, 1, 1)
         # self.policy_softmax = nn.Softmax(dim=1)
 
@@ -86,8 +86,10 @@ class ResNet(nn.Module):
         # p_out = self.policy_softmax(p_out)
         return p_out, v_out  # 1 x 2048, 1 x 17
 
-def save_model(model, f_name):
-    torch.save(model.state_dict(), f_name)
 
-def load_model(model, f_name):
-    model.load_state_dict(torch.load(f_name))
+    def save_model(self, f_name):
+        torch.save(self.state_dict(), f_name)
+
+
+    def load_model(self, f_name):
+        self.load_state_dict(torch.load(f_name))

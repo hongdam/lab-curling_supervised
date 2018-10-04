@@ -47,9 +47,11 @@ def coordinates_to_plane(coordinates):
                 plane[bat][1][y][x] = 1
 
     print(plane.shape)
-xy = numpy.zeros([32], numpy.float32)
-a = simulate(xy, 14, 2.375, 4.88, 0, 0.145)
-coordinates_to_plane([a,a, a])
+
+if __name__ == '__main__':
+    xy = numpy.zeros([32], numpy.float32)
+    a = simulate(xy, 14, 2.375, 4.88, 0, 0.145)
+    coordinates_to_plane([a,a, a])
 # test = numpy.zeros((2,32,32))
 # test[0][1][0] = 1
 # print(test)
