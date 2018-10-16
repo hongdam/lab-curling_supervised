@@ -21,17 +21,40 @@ class CURL(Dataset):
         self.is_hammer = hammer
 
         if self.train:
-            file = os.path.join(path, self.train_file)
-            self.train_data = np.loadtxt(file, delimiter=' ')
+            if self.is_hammer:
+                file = os.path.join(path, self.train_file)
+                self.train_data = np.loadtxt(file, delimiter=' ')
+            else:
+                self.train_data = np.load('./train_data/train_data.npy')
         else:
-            file = os.path.join(path, self.test_file)
-            self.test_data = np.loadtxt(file, delimiter=' ')
+            if self.is_hammer:
+                file = os.path.join(path, self.test_file)
+                self.test_data = np.loadtxt(file, delimiter=' ')
+            else:
+                self.test_data = np.load('./test_data/test_data.npy')
 
     def __getitem__(self, index):
         if self.train:
-            data, label = self.train_data[index, :32], self.train_data[index, 32:35]
+            if self.is_hammer:
+                data, label = self.train_data[index, :32], self.train_data[index, 32:35]
+            else:
+                data = self.train_data[index, :32]
+                label = self.train_data[index, 32:35]
+                order = self.train_data[index, 35].astype(np.int)
+                turn = self.train_data[index, 36].astype(np.int)
+
+                score = self.train_data[index, 37] if order == 0 else -self.train_data[index, 37]
         else:
-            data, label = self.test_data[index, :32], self.test_data[index, 32:35]
+            if self.is_hammer:
+                data, label = self.test_data[index, :32], self.test_data[index, 32:35]
+            else:
+                data = self.test_data[index, :32]
+                label = self.test_data[index, 32:35]
+                order = self.test_data[index, 35].astype(np.int)
+                turn = self.test_data[index, 36].astype(np.int)
+                score = self.test_data[index, 37] if order == 0 else -self.test_data[index, 37]
+
+
 
         if self.is_hammer:
             order = 1
@@ -48,12 +71,10 @@ class CURL(Dataset):
         data = [[int(round(x/4.75 * 31)), int(round(y/11.28 * 31))]
                 for x, y in zip(data[::2], data[1::2])]
 
-
-
         plane = np.zeros((2, 32, 32))
         ones_plane = np.ones((1, 32, 32))
         plane = np.concatenate((plane, ones_plane))
-        zeros_plane = np.ones((1, 32, 32))
+        zeros_plane = np.zeros((1, 32, 32))
 
         if order == 0:
             plane = np.concatenate((plane, ones_plane))
@@ -75,12 +96,17 @@ class CURL(Dataset):
             else:
                 plane[1][y][x] = 1
 
-        plane[5 + turn // 2] = np.ones((32, 32))
+        plane[5 + int(turn) // 2] = np.ones((32, 32))
+
+        if order == 1:
+            score = -score
+        score += 8
 
         if self.transform is not None:
             data = self.transform(data)
 
         plane = torch.FloatTensor(plane)
+        score = int(score)
 
         return plane, label, score
 
@@ -100,11 +126,14 @@ import time
 from torch import nn
 import visdom
 import torch.functional as F
-learning_rate = 0.00001
+learning_rate = 0.001
 import tqdm
-def test(net, device, test_loader, s_win, l_win, epoch):
+
+
+def test(net, device, test_loader, s_win, l_win, l_top1_win, epoch):
     net.eval()
     label_correct = 0
+    label_correct_top1 = 0
     score_correct = 0
 
     with torch.no_grad():
@@ -117,8 +146,8 @@ def test(net, device, test_loader, s_win, l_win, epoch):
             p_out, v_out = net(inputs)
 
             # top one
-            # pred = p_out.max(1, keepdim=True)[1]
-            # label_correct += pred.eq(labels.view_as(pred)).sum().item()
+            pred = p_out.max(1, keepdim=True)[1]
+            label_correct_top1 += pred.eq(labels.view_as(pred)).sum().item()
             #
             # pred = v_out.max(1, keepdim=True)[1]
             # score_correct += pred.eq(scores.view_as(pred)).sum().item()
@@ -138,10 +167,12 @@ def test(net, device, test_loader, s_win, l_win, epoch):
 
     s_a = 100. * score_correct / len(test_loader.dataset)
     l_a = 100. * label_correct / len(test_loader.dataset)
+    l_a_top1 = 100. * label_correct_top1 / len(test_loader.dataset)
 
     print('Score_acc: {:.3f}%, Label_acc: {:.2f}%'.format(s_a, l_a))
     vis.line(np.asarray([s_a]), np.asarray([epoch]), win=s_win, update='append', opts=dict(title="score_top2_34"))
     vis.line(np.asarray([l_a]), np.asarray([epoch]), win=l_win, update='append', opts=dict(title="shot_top5_34"))
+    vis.line(np.asarray([l_a_top1]), np.asarray([epoch]), win=l_top1_win, update='append', opts=dict(title="shot_top1_34"))
 
     net.train()
 
@@ -154,21 +185,24 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     network = model.ResNet(model.ResidualBlock, [3, 4, 6, 3]).to(device)
 
+    network.load_model('./model/deep__29')
+
     optimizer = torch.optim.Adam(network.parameters(), lr=learning_rate, weight_decay=1e-6)
     criterion = nn.CrossEntropyLoss()
     # [50, 120, 160]
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[30, 60, 90], gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[4, 15, 30], gamma=0.1)
     # transformations = transforms.Compose([transforms.ToTensor()])
 
-    train_dataset = CURL('./data', train=True, hammer=True)
-    train_loader = DataLoader(train_dataset, batch_size=64, num_workers=4, shuffle=True)
+    train_dataset = CURL('./data', train=True, hammer=False)
+    train_loader = DataLoader(train_dataset, batch_size=192, num_workers=4, shuffle=True)
 
-    test_dataset = CURL('./data', train=False, hammer=True)
+    test_dataset = CURL('./data', train=False, hammer=False)
     test_loader = DataLoader(test_dataset, batch_size=1024, num_workers=4)
 
     vis = visdom.Visdom()
     s_win = vis.line(np.asarray([0]))
     l_win = vis.line(np.asarray([0]))
+    l_top1_win = vis.line(np.asarray([0]))
 
     for e in range(500):
         print(e)
@@ -179,20 +213,24 @@ if __name__ == '__main__':
 
             p_out, v_out = network(inputs.to(device))
 
-            one = criterion(v_out, torch.LongTensor(scores).to(device))
-            two = criterion(p_out, torch.LongTensor(labels).to(device))
+            one = criterion(v_out, scores.long().to(device))
+            two = criterion(p_out, labels.to(device))
             loss = one + two
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            # if i % 500 == 499:
+            if i % 2000 == 2000 - 1:
+                print(loss, one, two)
+
         print(torch.argmax(p_out[0]), labels[0])
         print(loss, one, two)
 
-        test(network, device, test_loader, s_win, l_win, e+1)
+        test(network, device, test_loader, s_win, l_win, l_top1_win,e+1)
 
-        if (e + 1) % 10 == 0:
-            print("Save")
-            network.save_model("./deep_"+str(e))
+        # if (e + 1) % 10 == 0:
+        #     print("Save")
+        #     network.save_model("./deep_"+str(e))
+
+        network.save_model("./deep_" + str(e))

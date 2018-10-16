@@ -92,4 +92,4 @@ class ResNet(nn.Module):
 
 
     def load_model(self, f_name):
-        self.load_state_dict(torch.load(f_name))
+        self.load_state_dict(torch.load(f_name, map_location=lambda storage, loc: storage))
