@@ -122,19 +122,18 @@ class CURL(Dataset):
         return fmt_str
 
 
-import time
 from torch import nn
 import visdom
-import torch.functional as F
 learning_rate = 0.001
 import tqdm
 
 
-def test(net, device, test_loader, s_win, l_win, l_top1_win, epoch):
+def test(net, device, test_loader, s_win, s_top1_win, l_win, l_top1_win, epoch):
     net.eval()
     label_correct = 0
     label_correct_top1 = 0
     score_correct = 0
+    score_correct_top1 = 0
 
     with torch.no_grad():
         for data in tqdm.tqdm(test_loader):
@@ -149,8 +148,8 @@ def test(net, device, test_loader, s_win, l_win, l_top1_win, epoch):
             pred = p_out.max(1, keepdim=True)[1]
             label_correct_top1 += pred.eq(labels.view_as(pred)).sum().item()
             #
-            # pred = v_out.max(1, keepdim=True)[1]
-            # score_correct += pred.eq(scores.view_as(pred)).sum().item()
+            pred = v_out.max(1, keepdim=True)[1]
+            score_correct_top1 += pred.eq(scores.view_as(pred)).sum().item()
 
             # top-5
             k = 5
@@ -166,13 +165,16 @@ def test(net, device, test_loader, s_win, l_win, l_top1_win, epoch):
             score_correct += correct.view(-1).float().sum(0, keepdim=True).item()
 
     s_a = 100. * score_correct / len(test_loader.dataset)
+    s_a_top1 = 100. * score_correct_top1 / len(test_loader.dataset)
     l_a = 100. * label_correct / len(test_loader.dataset)
     l_a_top1 = 100. * label_correct_top1 / len(test_loader.dataset)
 
     print('Score_acc: {:.3f}%, Label_acc: {:.2f}%'.format(s_a, l_a))
-    vis.line(np.asarray([s_a]), np.asarray([epoch]), win=s_win, update='append', opts=dict(title="score_top2_34"))
-    vis.line(np.asarray([l_a]), np.asarray([epoch]), win=l_win, update='append', opts=dict(title="shot_top5_34"))
-    vis.line(np.asarray([l_a_top1]), np.asarray([epoch]), win=l_top1_win, update='append', opts=dict(title="shot_top1_34"))
+    print('Top1 Score_acc: {:.3f}%, Label_acc: {:.2f}%'.format(s_a_top1, l_a_top1))
+    vis.line(np.asarray([s_a]), np.asarray([epoch]), win=s_win, update='append', opts=dict(title="score_top2"))
+    vis.line(np.asarray([s_a_top1]), np.asarray([epoch]), win=s_top1_win, update='append', opts=dict(title="score_top1"))
+    vis.line(np.asarray([l_a]), np.asarray([epoch]), win=l_win, update='append', opts=dict(title="shot_top5"))
+    vis.line(np.asarray([l_a_top1]), np.asarray([epoch]), win=l_top1_win, update='append', opts=dict(title="shot_top1"))
 
     net.train()
 
@@ -185,7 +187,7 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     network = model.ResNet(model.ResidualBlock, [3, 4, 6, 3]).to(device)
 
-    network.load_model('./model/deep__29')
+    # network.load_model('.deep_fixed_9')
 
     optimizer = torch.optim.Adam(network.parameters(), lr=learning_rate, weight_decay=1e-6)
     criterion = nn.CrossEntropyLoss()
@@ -194,16 +196,22 @@ if __name__ == '__main__':
     # transformations = transforms.Compose([transforms.ToTensor()])
 
     train_dataset = CURL('./data', train=True, hammer=False)
-    train_loader = DataLoader(train_dataset, batch_size=192, num_workers=4, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=64, num_workers=4, shuffle=True)
 
     test_dataset = CURL('./data', train=False, hammer=False)
     test_loader = DataLoader(test_dataset, batch_size=1024, num_workers=4)
 
     vis = visdom.Visdom()
     s_win = vis.line(np.asarray([0]))
+    s_top1_win = vis.line(np.asarray([0]))
     l_win = vis.line(np.asarray([0]))
     l_top1_win = vis.line(np.asarray([0]))
 
+    vis_loss = vis.line(np.asarray([0]))
+    vis_loss_v = vis.line(np.asarray([0]))
+    vis_loss_p = vis.line(np.asarray([0]))
+
+    current_iter = 0
     for e in range(500):
         print(e)
         scheduler.step()
@@ -221,16 +229,20 @@ if __name__ == '__main__':
             loss.backward()
             optimizer.step()
 
-            if i % 2000 == 2000 - 1:
-                print(loss, one, two)
+            if current_iter % 100 == 0:
+                vis.line(loss.unsqueeze(0), np.asarray([current_iter]), win=vis_loss, update='append', opts=dict(title='loss'))
+                vis.line(one.unsqueeze(0), np.asarray([current_iter]), win=vis_loss_v, update='append', opts=dict(title='loss_v'))
+                vis.line(two.unsqueeze(0), np.asarray([current_iter]), win=vis_loss_p, update='append', opts=dict(title='loss_p'))
+            current_iter += 1
 
+        print(current_iter)
         print(torch.argmax(p_out[0]), labels[0])
         print(loss, one, two)
 
-        test(network, device, test_loader, s_win, l_win, l_top1_win,e+1)
+        test(network, device, test_loader, s_win, s_top1_win, l_win, l_top1_win, e+1)
 
         # if (e + 1) % 10 == 0:
         #     print("Save")
         #     network.save_model("./deep_"+str(e))
 
-        network.save_model("./deep_" + str(e))
+        network.save_model("./model_" + str(e))
