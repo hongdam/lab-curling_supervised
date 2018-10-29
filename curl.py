@@ -98,8 +98,8 @@ class CURL(Dataset):
 
         plane[5 + int(turn) // 2] = np.ones((32, 32))
 
-        if order == 1:
-            score = -score
+        # if order == 1:
+        #     score = -score
         score += 8
 
         if self.transform is not None:
@@ -124,7 +124,7 @@ class CURL(Dataset):
 
 from torch import nn
 import visdom
-learning_rate = 0.001
+learning_rate = 0.0001
 import tqdm
 
 
@@ -187,12 +187,12 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     network = model.ResNet(model.ResidualBlock, [3, 4, 6, 3]).to(device)
 
-    # network.load_model('.deep_fixed_9')
+    network.load_model('./model_1')
 
     optimizer = torch.optim.Adam(network.parameters(), lr=learning_rate, weight_decay=1e-6)
     criterion = nn.CrossEntropyLoss()
     # [50, 120, 160]
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[4, 15, 30], gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[15, 30, 60], gamma=0.1)
     # transformations = transforms.Compose([transforms.ToTensor()])
 
     train_dataset = CURL('./data', train=True, hammer=False)
@@ -245,4 +245,4 @@ if __name__ == '__main__':
         #     print("Save")
         #     network.save_model("./deep_"+str(e))
 
-        network.save_model("./model_" + str(e))
+        network.save_model("./model_16AS_" + str(e))

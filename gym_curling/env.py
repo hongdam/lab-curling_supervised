@@ -8,7 +8,6 @@ class Curling:
     def __init__(self, uncertainty):
         self.state = None
         self.current_turn = None
-        self.order = 1
 
         self.uncertainty = uncertainty
 
@@ -29,9 +28,15 @@ class Curling:
         # actual_action: [ -1.0299234 -29.67658     0.       ]
 
         done = True if self.current_turn == 15 else False
-        reward = self.get_score(self.state, self.order) if done else 0
+        reward = self.get_score(self.state) if done else 0
         self.current_turn += 1
         return self._get_obs(), reward, done
+
+    def virtual_step(self, action, un=0.):
+        state, _ = simulate(self.state, self.current_turn, action[0], action[1], action[2], un)
+
+        return state, self.current_turn
+
 
     def reset(self):
         self.state = np.zeros(32, np.float32)
@@ -42,10 +47,16 @@ class Curling:
     def _get_obs(self):
         return [self.state, self.current_turn]
 
-    def render(self, save=False, additional=None):
+    def render(self, save=False, additional=None, highlight=None):
         if additional is not None:
             for i, coord in enumerate(additional, 1):
-                cir = plt.Circle((coord[0], coord[1]), 0.09, color='blue', alpha=(1./i))
+                if highlight == i - 1:
+                    color = 'yellow'
+                    alpha = 1.
+                else:
+                    color = 'blue'
+                    alpha = (1. / i)
+                cir = plt.Circle((coord[0], coord[1]), 0.09, color=color, alpha=alpha)
                 if coord[2] == 1:
                     cir.set_edgecolor("black")
                     cir.set_linewidth(2)
@@ -64,8 +75,8 @@ class Curling:
         plt.title(str(self.current_turn) + ' SHOT')
 
         a = [[self.state[i], self.state[i + 1]] for i in range(0, 32, 2)]
-        my = np.asarray([x for x in a[self.order::2] if x[0] != 0 and x[1] != 0 ])
-        op = np.asarray([x for x in a[1 - self.order::2] if x[0] != 0 and x[1] != 0 ])
+        first = np.asarray([x for x in a[::2] if x[0] != 0 and x[1] != 0 ])
+        second = np.asarray([x for x in a[1::2] if x[0] != 0 and x[1] != 0 ])
 
         cir = plt.Circle((2.375, 4.88), 1.83, color='g', alpha=0.2)
         self._ax.add_artist(cir)
@@ -73,10 +84,10 @@ class Curling:
         cir = plt.Circle((2.375, 4.88), 0.5, color='g', alpha=0.2)
         self._ax.add_artist(cir)
 
-        if my.size != 0:
-            self._ax.scatter(my[:, 0], my[:, 1], color='r')
-        if op.size != 0:
-            self._ax.scatter(op[:, 0], op[:, 1], color='y')
+        if first.size != 0:
+            self._ax.scatter(first[:, 0], first[:, 1], color='y')
+        if second.size != 0:
+            self._ax.scatter(second[:, 0], second[:, 1], color='r')
         self._ax.axis('equal')
 
 
@@ -88,11 +99,11 @@ class Curling:
         if save:
             plt.savefig('./img/' + str(self.current_turn) + '_{:.3f}_{:.3f}_{:.0f}'.format(self.x,self.y,self.curl) + '.png')
 
-        plt.pause(0.1)
+        plt.pause(0.01)
         # plt.cla()
 
     @staticmethod
-    def get_score(state, turn):
+    def get_score(state, order=0):
 
         score = 0
 
@@ -100,8 +111,8 @@ class Curling:
         coors = [np.array([state[i], state[i + 1]]) for i in range(0, 32, 2)]
         dists = [np.linalg.norm(t_coor - coor) for coor in coors]
 
-        my = sorted(dists[turn::2])
-        op = sorted(dists[1 - turn::2])
+        my = sorted(dists[order::2])
+        op = sorted(dists[1 - order::2])
 
         if my[0] < op[0]:
             for my_dist in my:
